@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AL</title>
+<link rel="icon" type="image/png" href="/assets/al.png"><link rel="apple-touch-icon" href="/assets/al.png"><title>AL</title>
 <script>
 // Saved theme choice ('light'/'dark'); none means follow the device. Set before first paint to avoid a flash.
 try{const t=localStorage.getItem('sparky.theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}
@@ -28,8 +28,8 @@ header .title{font-weight:700;font-size:20px;letter-spacing:.1px}
 .badge.arm1{background:#DEDAD3;color:#4A4740}
 .badge.arm2{background:#fff;color:var(--primary);box-shadow:inset 0 0 0 1.5px var(--primary)}
 .badge.arm3{background:var(--accent);color:var(--accent-foreground)}
-.layout{flex:1;display:flex;min-height:0}.chat{flex:1;display:flex;flex-direction:column;min-width:0}
-#log{flex:1;overflow:auto;padding:36px 24px 16px;max-width:728px;width:100%;margin:0 auto}
+.layout{flex:1;display:flex;min-height:0}.chat{flex:1;display:flex;flex-direction:column;min-width:0;position:relative}
+#log{flex:1;overflow:auto;padding:36px 24px 16px;max-width:728px;width:100%;margin:0 auto;position:relative}
 .msg{margin:0 0 18px;border-radius:20px;overflow-x:auto}
 .user{border-bottom-right-radius:6px;background:var(--bubble);color:var(--fg);width:fit-content;max-width:85%;margin-left:auto;padding:14px 22px;white-space:pre-wrap}
 .bot{background:var(--card);border:1px solid var(--line);padding:18px 22px;white-space:normal;box-shadow:0 1px 2px rgba(26,26,26,.04)}
@@ -83,6 +83,11 @@ header button:focus-visible{outline-color:#fff}
 .nav-foot{border-top:1px solid var(--line);padding:10px 12px;font-size:13px;color:var(--muted)}
 .nav-foot button{font-size:13px;padding:5px 12px}#clear-confirm button{margin-left:6px}
 .notice{font-size:12px;color:var(--muted);text-align:center;margin:0 0 14px}
+/* Shown when the answer under the question runs past the bottom of the view: the view stays put and this says there is more below */
+#scroll-hint{position:absolute;left:50%;bottom:96px;transform:translateX(-50%);z-index:3;display:inline-flex;align-items:center;gap:6px;background:var(--chip);color:var(--chip-fg);border:none;font-size:13px;font-weight:600;padding:6px 14px;border-radius:999px;box-shadow:0 2px 8px rgba(0,0,0,.18);white-space:nowrap;transition:opacity .2s ease}
+#scroll-hint[hidden]{display:none}#scroll-hint svg{width:15px;height:15px;flex:none}
+#scroll-hint:hover:not(:disabled){color:var(--chip-fg);border:none;filter:brightness(1.1)}
+@media (prefers-reduced-motion:reduce){#scroll-hint{transition:none}}
 /* "Suggested follow-ups" lists in an answer become clickable prompts */
 .followups{display:flex;flex-direction:column;align-items:flex-start;gap:8px;margin:10px 0 4px}
 .followup{font-weight:500;font-size:14px;text-align:left;border-radius:14px;padding:8px 14px;line-height:1.4;max-width:100%}
@@ -118,6 +123,7 @@ button:disabled{cursor:default;opacity:.6}
 <ul id="chat-list"></ul>
 <div class="nav-foot"><button id="clear-history" type="button">Clear history</button><span id="clear-confirm" hidden>Clear all chats? <button id="clear-yes" type="button">Clear</button><button id="clear-no" type="button">Cancel</button></span></div>
 </nav><div class="chat"><div id="log"></div>
+<button id="scroll-hint" type="button" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>The answer continues below</button>
 <form id="f"><input id="q" placeholder="Ask about enrollment, melt, or a program…" autocomplete="off" autofocus><button aria-label="Send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></form>
 <footer class="disclaimer"><strong>AL — powered by Action Lab.</strong> AL uses AI and can make mistakes. Contact Action Lab to confirm and validate any analysis before you rely on it.</footer></div><aside id="side"></aside></div>
 <script>
@@ -129,17 +135,46 @@ const params=new URLSearchParams(location.search), mock=params.get('mock')==='1'
 // Render model output as markdown; sanitize, and fall back to plain text if the libraries failed to load.
 function md(t){return window.marked&&window.DOMPurify?DOMPurify.sanitize(marked.parse(t)):t.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
 const log=document.getElementById('log');
-function add(cls,text){const d=document.createElement('div');d.className=cls;d.textContent=text;log.appendChild(d);log.scrollTop=log.scrollHeight;return d}
-// Year-over-year wording in the question (or a clarification answer) splits charts into one series per
-// year. `turn` counts questions in this chat: from the second on, cards open on the data, not a chart,
-// unless the question (`ask`, plus any clarification answers) asks for one.
-let intent=null,turn=0,ask='';
-function startQuestion(text){turn++;ask=text;intent=SparkyCharts.intentOf(text)}
+function add(cls,text){const d=document.createElement('div');d.className=cls;d.textContent=text;log.appendChild(d);autoScroll();return d}
+// The question being answered sits near the top of the view (the anchor) and the answer fills the space under it,
+// with the last few lines of whatever came before it (PEEK) left showing above it for context.
+// Bottom padding on the log, set when the question is sent, makes that position reachable while the answer is still
+// short; it is not touched again during the answer, so nothing moves the view (padding that tracked the content would
+// pin the view to its scroll limit, and every transient shrink would then drag the anchor up). A small pill says the
+// answer continues below when it overflows the view. The pill goes, the padding resets and the view follows the
+// answer again when the user clicks it or scrolls to the bottom; the next question anchors afresh.
+let holdScroll=false,hintOff=false,pad=16;
+const BASE_PAD=16,TOP_GAP=24,PEEK=80,SLACK=40;   // SLACK: room for the status row to come and go without clamping the scroll
+const hint=document.getElementById('scroll-hint');
+const setPad=v=>{v=Math.round(v);if(v!==pad){pad=v;log.style.paddingBottom=v+'px'}};
+// Where the content ends (scrollHeight is never less than the view, so it cannot tell when the content is shorter)
+const contentBottom=()=>{const l=log.lastElementChild;return l?l.offsetTop+l.offsetHeight+parseFloat(getComputedStyle(l).marginBottom):0};
+const hiddenBelow=()=>contentBottom()-log.clientHeight-log.scrollTop;   // content below the view
+function autoScroll(){
+  if(!holdScroll||replaying){log.scrollTop=log.scrollHeight;return}
+  hint.hidden=hintOff||hiddenBelow()<=8;
+}
+function releaseHold(){holdScroll=false;hint.hidden=true;setPad(BASE_PAD)}
+function anchorTurn(bubble){
+  holdScroll=true;hintOff=false;hint.hidden=true;
+  const gap=bubble.previousElementSibling?Math.min(PEEK,log.clientHeight/4):TOP_GAP;   // a short view keeps room for the answer
+  setPad(Math.max(BASE_PAD,log.clientHeight-(contentBottom()-bubble.offsetTop)-gap+SLACK));
+  log.scrollTop=Math.max(0,bubble.offsetTop-gap);
+}
+hint.onclick=()=>{releaseHold();log.scrollTo({top:log.scrollHeight,behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth'})};
+log.addEventListener('scroll',()=>{if(holdScroll&&(!hint.hidden||hintOff)&&hiddenBelow()<=8)releaseHold()});
+// Once the user scrolls the log themselves the pill has done its job; left up, it would float over what they
+// scroll to and swallow clicks meant for it (the follow-up chips at the end of an answer, in particular).
+const dismissHint=()=>{if(holdScroll&&!hint.hidden){hintOff=true;hint.hidden=true}};
+log.addEventListener('wheel',dismissHint,{passive:true});log.addEventListener('touchmove',dismissHint,{passive:true});
+// Year-over-year wording in the question (or a clarification answer) splits charts into one series per year.
+let intent=null;
+function startQuestion(text){intent=SparkyCharts.intentOf(text)}
 async function answer(qid,text,box){
-  intent=SparkyCharts.intentOf(text)||intent;ask+=' '+text;
+  intent=SparkyCharts.intentOf(text)||intent;
   box.querySelectorAll('button,input').forEach(e=>e.disabled=true);box.classList.add('answered');
   box.querySelectorAll('.chips button').forEach(b=>{if(b.dataset.opt===text)b.classList.add('on')});
-  add('msg user',text);
+  anchorTurn(add('msg user',text));
   if(chat){SparkyHistory.answerClarify(chat,qid,text,Date.now());flushSave()}
   setBusy(true);
   const r=await fetch('/answer',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({session_id:sid,question_id:qid,answer:text})});
@@ -159,7 +194,7 @@ function clarify(ev){
     inp.onkeydown=e=>{if(e.key==='Enter'&&inp.value.trim()){e.preventDefault();answer(ev.id,inp.value.trim(),box)}};
     box.append(inp);
   }
-  log.append(box);log.scrollTop=log.scrollHeight;bot=null;
+  log.append(box);autoScroll();bot=null;
 }
 
 // ---- Explore-style result cards: Chart / Table / SQL ----
@@ -230,7 +265,7 @@ function resultCard(ev){
     body.replaceChildren();
     if(name==='Chart'){
       if(canChart){const cv=el('canvas');body.append(cv);chart=new Chart(cv,SparkyCharts.config(kind,shape,palette()))}
-      else if(canStat){const w=el('div','stats');metrics.forEach(m=>{const st=el('div','stat',fmt(rows[0][m]));st.append(el('small',null,SparkyCharts.shortLabel(shape,m)));w.append(st)});body.append(w)}
+      else if(canStat){const w=el('div','stats');SparkyCharts.chartMetrics(shape).forEach(m=>{const st=el('div','stat',fmt(rows[0][m]));st.append(el('small',null,SparkyCharts.shortLabel(shape,m)));w.append(st)});body.append(w)}
       else body.append(el('p',null,'No chart available for this result. See the Table view.'));
     }else if(name==='Table'){
       const t=el('table'),h=el('tr');cols.forEach(c=>h.append(el('th',null,c)));t.append(h);
@@ -238,7 +273,7 @@ function resultCard(ev){
     }else body.append(sql);
   }
   ['Chart','Table','SQL'].forEach(n=>{const b=el('button',null,n);b.type='button';b.onclick=()=>show(n);views[n]=b;head.append(b)});
-  const dl=el('button',null,'CSV');dl.type='button';dl.onclick=()=>download('sparky-result.csv',csv(cols,rows));
+  const dl=el('button',null,'CSV');dl.type='button';dl.onclick=()=>download('al-result.csv',csv(cols,rows));
   const cp=el('button',null,'Copy SQL');cp.type='button';cp.onclick=()=>navigator.clipboard?.writeText(sql.textContent);
   const op=el('button',null,'Open');op.type='button';
   op.onclick=()=>{const L=document.getElementById('layout'),side=document.getElementById('side');
@@ -247,10 +282,8 @@ function resultCard(ev){
   head.append(sel,dl,cp,op);card.append(head,body);
   card.setSql=t=>{sql.textContent=t};
   card.redraw=()=>{if(view==='Chart')show('Chart')};   // theme change: new palette and axis colors
-  // Open on the chart (or big number) whenever there is one; the table when nothing is numeric, or for a
-  // follow-up question that did not ask for a chart: there the data is the answer.
-  const dataOnly=turn>1&&!SparkyCharts.wantsChart(ask);
-  show(canStat||(canChart&&!dataOnly)?'Chart':'Table');
+  // Always open on the chart (or big number); the table is one click away.
+  show('Chart');
   return card;
 }
 const CLIP='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5l-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6l7.9-7.9"/></svg>';
@@ -261,11 +294,11 @@ function addCite(cs){
   const wrap=el('div','cites');
   cs.forEach(c=>{const d=el('details','cite');const sm=el('summary');sm.insertAdjacentHTML('beforeend',CLIP);sm.append(el('span',null,citeLabel(c)));
     d.append(sm,el('div','cite-text',c.text+(c.metric?' ('+c.metric+')':'')));wrap.append(d)});
-  if(bot&&bot.parentNode===log)bot.after(wrap);else log.append(wrap);log.scrollTop=log.scrollHeight;
+  if(bot&&bot.parentNode===log)bot.after(wrap);else log.append(wrap);autoScroll();
 }
 // Empty the conversation view. Leaves sid, the chat record, the mode and the URL alone.
 function clearView(){
-  bot=null;streaming=null;streamBuf='';setBusy(false);resetTurn();log.replaceChildren();turn=0;ask='';intent=null;
+  bot=null;streaming=null;streamBuf='';setBusy(false);resetTurn();releaseHold();log.replaceChildren();intent=null;
   for(const k in cards)delete cards[k];for(const k in pendingSql)delete pendingSql[k];
   document.getElementById('side').replaceChildren();document.getElementById('layout').classList.remove('open');
   document.getElementById('replay').style.display='none';
@@ -305,7 +338,8 @@ function openChat(id){
   replaying=true;try{rebuild(c)}finally{replaying=false}
   setBusy(false);
   if(SparkyHistory.isInterrupted(c))add('notice','This answer was interrupted. Ask again to continue.');
-  store.setActive(id);renderSidebar();log.scrollTop=log.scrollHeight;
+  store.setActive(id);renderSidebar();
+  const toEnd=()=>{log.scrollTop=log.scrollHeight};toEnd();requestAnimationFrame(()=>requestAnimationFrame(toEnd));   // again once Chart.js has sized the canvases
   if(narrow.matches)toggleNav(false,false);
 }
 // Replay the stored items through the same renderer as live events. resetTurn() at each user
@@ -378,14 +412,15 @@ function setBusy(on){
   if(busy&&log.lastElementChild!==busy)log.append(busy)}
 // Send a prompt exactly as if the user had typed it (used by follow-up chips).
 function send(text){if(busy)return;const q=document.getElementById('q');q.value=text;document.getElementById('f').requestSubmit()}
-// Rule 10 in the Socratic prompt ends comparisons with a 'Suggested follow-ups' list; make each
-// item a button so the user can ask it with one click. Works on live and replayed answers.
+// Rule 7 in the Socratic prompt ends every Arm 3 answer with a 'Suggested follow-ups' list; make
+// each item a button so the user can ask it with one click. Works on live and replayed answers.
+// The heading may be bold, a real heading, or plain text, with or without a trailing colon.
 function linkFollowUps(bubble){
-  bubble.querySelectorAll('h1,h2,h3,h4,h5,p>strong:only-child').forEach(h=>{
-    if(!/^suggested follow-?ups?:?$/i.test(h.textContent.trim()))return;
-    const holder=h.tagName==='STRONG'?h.parentElement:h;const list=holder.nextElementSibling;
+  bubble.querySelectorAll('h1,h2,h3,h4,h5,h6,p').forEach(holder=>{
+    if(!/^suggested follow-?ups?:?$/i.test(holder.textContent.replace(/\s+/g,' ').trim()))return;
+    const list=holder.nextElementSibling;
     if(!list||(list.tagName!=='UL'&&list.tagName!=='OL'))return;
-    const chips=el('div','followups');
+    const chips=el('div','followups');chips.setAttribute('role','group');chips.setAttribute('aria-label','Suggested follow-ups');
     [...list.children].forEach(li=>{const t=li.textContent.replace(/\s+/g,' ').trim();if(!t)return;
       const b=el('button','followup',t);b.type='button';b.onclick=()=>send(t);chips.append(b)});
     if(chips.children.length)list.replaceWith(chips);
@@ -398,18 +433,18 @@ function handle(ev){
     pendingSid=null}
   else if(ev.type==='text_delta'){
     if(!streaming){streaming=add('msg bot','');streamBuf=''}
-    streamBuf+=ev.text;streaming.innerHTML=md(streamBuf);log.scrollTop=log.scrollHeight}
+    streamBuf+=ev.text;streaming.innerHTML=md(streamBuf);autoScroll()}
   else if(ev.type==='text'){
     // The complete block replaces the streamed bubble (if any) so text never appears twice.
-    bot=streaming||add('msg bot','');streaming=null;bot.innerHTML=md(ev.text);linkFollowUps(bot)}
+    bot=streaming||add('msg bot','');streaming=null;bot.innerHTML=md(ev.text);linkFollowUps(bot);autoScroll()}
   else if(ev.type==='result_table'){const c=resultCard(ev);cards[ev.key]=c;placeCard(c);
-    if(pendingSql[ev.key]){c.setSql(pendingSql[ev.key]);delete pendingSql[ev.key]}log.scrollTop=log.scrollHeight}
+    if(pendingSql[ev.key]){c.setSql(pendingSql[ev.key]);delete pendingSql[ev.key]}autoScroll();requestAnimationFrame(()=>requestAnimationFrame(autoScroll))}
   else if(ev.type==='sql'){if(cards[ev.key])cards[ev.key].setSql(ev.sql);else pendingSql[ev.key]=ev.sql}
   else if(ev.type==='cite')addCite(ev.citations);
   else if(ev.type==='replay')document.getElementById('replay').style.display='inline-block';
   else if(ev.type==='clarify')clarify(ev);
   else if(ev.type==='error')add('msg bot','Error: '+ev.message);
-  else if(ev.type==='done'){setBusy(false);resetTurn()}
+  else if(ev.type==='done'){setBusy(false);resetTurn();autoScroll()}
   if(replaying)return;
   if(ev.type!=='done'&&ev.type!=='clarify')setBusy(true);else if(ev.type==='clarify')setBusy(false);
   record(ev);
@@ -417,7 +452,7 @@ function handle(ev){
 document.getElementById('f').onsubmit=async e=>{
   e.preventDefault();const q=document.getElementById('q');const text=q.value.trim();if(!text)return;q.value='';
   ensureChat();const myChat=chat;
-  add('msg user',text);record({role:'user',text});flushSave();resetTurn();startQuestion(text);
+  const u=add('msg user',text);record({role:'user',text});flushSave();resetTurn();startQuestion(text);anchorTurn(u);
   pendingSid=sid;setBusy(true);
   const fail=m=>{if(chat===myChat){handle({type:'error',message:m});handle({type:'done'})}};
   let r;

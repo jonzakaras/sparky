@@ -165,3 +165,8 @@ async def answer(body: AnswerIn):
 @app.get("/")
 async def index():
     return FileResponse(WEB_DIR / "index.html")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return FileResponse(WEB_DIR / "assets" / "al.png", media_type="image/png")

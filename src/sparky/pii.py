@@ -1,6 +1,6 @@
-"""Keep student identifiers and other PII out of what Sparky shows (and out of what the model sees).
+"""Keep student identifiers and other PII out of what AL shows (and out of what the model sees).
 
-Sparky answers with aggregates only. Four layers use the rules in this module:
+AL answers with aggregates only. Four layers use the rules in this module:
   1. PreToolUse hooks (agent.py) refuse queries that select, group by or filter on an identifier.
   2. A PostToolUse hook (agent.py) scrubs tool results before the model reads them.
   3. EventGuard (server.py) scrubs every event sent to the browser, live or replayed.
@@ -63,7 +63,7 @@ def _scrub_value(v: Any) -> Any:
 
 
 # ---- Query checks (PreToolUse) ----
-AGGREGATE_ONLY = ("Sparky answers with aggregates only. Individual student identifiers (EMPLID, "
+AGGREGATE_ONLY = ("AL answers with aggregates only. Individual student identifiers (EMPLID, "
                   "student id, ASURITE), names and contact details can't be selected, grouped by "
                   "or filtered on. Rewrite the query as an aggregate, or tell the user this isn't available.")
 

@@ -1,4 +1,4 @@
-# Sparky: start, warm up and demo shortcuts. Run `make` for the list of targets.
+# AL: start, warm up and demo shortcuts. Run `make` for the list of targets.
 #
 #   make start                 start the server in the background (no --reload), wait until healthy
 #   make preflight             warm every arm, then run the warm-up script (do this before presenting)

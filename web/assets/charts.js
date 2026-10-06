@@ -77,6 +77,15 @@
     return (shape.shortLabels || {})[m] || metricLabel(shape, m);
   }
 
+  /* Metrics to chart. A rate queried together with its inputs (melt rate with first-day and census enrollment)
+   * charts on its own: the counts would dwarf it on a shared axis, and the table still shows them. */
+  const RATE_NAME_RE = /(^|_)(pct|rate|ratio)(_|$)/i, RATE_LABEL_RE = /\b(rate|ratio|percent(age)?)\b/i;
+  function chartMetrics(shape) {
+    const rates = shape.metrics.filter((m) => RATE_NAME_RE.test(m) || RATE_LABEL_RE.test((shape.labels || {})[m] || ''));
+    return rates.length && rates.length < shape.metrics.length ? rates : shape.metrics;
+  }
+  const forChart = (shape) => ({ ...shape, metrics: chartMetrics(shape) });
+
   const fmtLabel = (v, isTime) => {
     const s = v == null ? '' : String(v);
     return isTime ? s.slice(0, 10) : s; // 2026-09-23T00:00:00 -> 2026-09-23
@@ -150,8 +159,8 @@
       xOf = (r) => { const k = stripYear(r[xDim]); return { key: k, label: k }; };
     } else return null;
 
-    const names = [...new Set(rows.map(seriesOf))].sort((a, b) =>
-      String(yearOf(a) || a).localeCompare(String(yearOf(b) || b)) || a.localeCompare(b));
+    const names = [...new Set(rows.map(seriesOf))];
+    names.sort(names.every((n) => yearOf(n)) ? byYearThenPeriod : (a, b) => a.localeCompare(b));
     if (names.length < 2) return null;
     const xs = new Map();
     rows.forEach((r) => { const x = xOf(r); if (!xs.has(x.key)) xs.set(x.key, x.label); });
@@ -183,6 +192,7 @@
     if (seriesDim) {
       const labels = [...new Set(rows.map((r) => fmtLabel(r[xDim], xDim === timeDim)))];
       const names = [...new Set(rows.map((r) => String(r[seriesDim])))];
+      if (names.every((n) => yearOf(n))) names.sort(byYearThenPeriod); // series of terms ('Fall 2025') in time order too
       const m = metrics[0];
       const datasets = names.map((n) => ({
         label: n,
@@ -229,6 +239,7 @@
   /* Chart types that make sense for this result, best default first. Empty means "show a stat" (one row)
    * or, with nothing numeric, the table. A time-series x axis defaults to a line, anything else to a bar. */
   function kinds(shape) {
+    shape = forChart(shape);
     const { rows, metrics } = shape;
     if (rows.length < 2 || metrics.length === 0) return [];
     const p = prepare(shape);
@@ -247,6 +258,7 @@
 
   /* Chart.js config for `kind`. `palette` is an array of CSS colors. */
   function config(kind, shape, palette) {
+    shape = forChart(shape);
     let p = prepare(shape);
     const isBar = kind === 'bar' || kind === 'hbar' || kind === 'stacked';
     // Bars over categories read as a ranking: largest first. Time axes, year-bearing terms ('Fall A 2025'),
@@ -299,7 +311,7 @@
     return { type, data: { labels: p.labels, datasets }, options };
   }
 
-  const api = { KINDS, intentOf, wantsChart, shapeOf, metricLabel, shortLabel, prepare, kinds, config };
+  const api = { KINDS, intentOf, wantsChart, shapeOf, metricLabel, shortLabel, chartMetrics, prepare, kinds, config };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.SparkyCharts = api;
 })(typeof window !== 'undefined' ? window : globalThis);

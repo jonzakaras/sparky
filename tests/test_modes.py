@@ -78,3 +78,27 @@ def test_comparison_rule_is_arm3_only():
     assert "do NOT present intermediate results" in arm3
     for arm in ("arm1", "arm2"):
         assert "Comparison questions" not in load_system_prompt(get_mode(arm), PACK)
+
+
+def test_every_arm3_answer_ends_with_suggested_followups():
+    arm3 = load_system_prompt(get_mode("arm3"), PACK)
+    assert "Close EVERY answer with" in arm3 and arm3.count("Suggested follow-ups") >= 2
+    assert "one useful follow-up question" not in arm3
+    assert "Never end an answer with a question in prose" in arm3
+    assert "invite correction" not in arm3
+    for arm in ("arm1", "arm2"):
+        assert "Suggested follow-ups" not in load_system_prompt(get_mode(arm), PACK)
+
+
+def test_arm3_asks_when_metric_or_span_is_open():
+    arm3 = load_system_prompt(get_mode("arm3"), PACK)
+    assert "Never assume which metric when several fit" in arm3
+    assert "never\n   assume what \"over time\" means" in arm3
+    assert "as few questions as possible" not in arm3
+    for arm in ("arm1", "arm2"):
+        assert "ask_clarifying_question" not in load_system_prompt(get_mode(arm), PACK)
+
+
+def test_arm3_keeps_to_its_own_numbers():
+    arm3 = load_system_prompt(get_mode("arm3"), PACK)
+    assert "Never mention other offices" in arm3 and "campus immersion" in arm3

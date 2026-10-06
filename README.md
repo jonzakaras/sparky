@@ -1,4 +1,4 @@
-# Sparky
+# AL
 
 Conversational analytics over the dbt Semantic Layer. A web chat app built on the Claude Agent SDK
 that uses the dbt MCP server and Socratic rules to sharpen vague questions into precise
@@ -27,7 +27,7 @@ make install             # or: python3 -m venv .venv && .venv/bin/pip install -e
 ```
 
 ## Start the server
-Sparky reads plain environment variables and does not load `.env` itself, so export it first. Do this
+AL reads plain environment variables and does not load `.env` itself, so export it first. Do this
 in every new terminal, from the repo root:
 
 ```bash
@@ -119,7 +119,7 @@ after `make restart` a reopened chat shows the transcript but the agent starts f
 
 ### Privacy: aggregates only
 
-Sparky never shows individual student identifiers (EMPLID, student id, ASURITE), names, emails or
+AL never shows individual student identifiers (EMPLID, student id, ASURITE), names, emails or
 contact details. The rules live in `src/sparky/pii.py` and are applied at four layers:
 
 1. **Before a query runs** (PreToolUse hooks in `agent.py`): arm 1 SQL may use identifier columns only
@@ -152,19 +152,20 @@ is remembered in this browser. Toggling back to match the device clears the over
 - **Arm 3:** like Arm 2, plus Socratic clarifying questions when the question is ambiguous. When a context-card field
   changed its conclusion, a dark chip with a paperclip (for example "Investigations: Fall B census offset") appears under
   the answer; click it to read the card text.
+  Every Arm 3 answer ends with 2-3 **Suggested follow-ups**, rendered as buttons: click one and it is sent as your next question.
   For **comparison questions** (A versus B, "why is X higher than Y"), Arm 3 does not walk through intermediate results: it replies with one short summary
-  (the compared values, the likely explanation, any comparability caveat) and 2-3 suggested follow-up analyses. If a turn runs several
+  (the compared values, the likely explanation, any comparability caveat) and its follow-ups are concrete next analyses. If a turn runs several
   queries, their cards are tucked into a collapsed "Supporting queries (N)" expander so they stay available for validation without cluttering the answer.
 
 ### Context pack (Arm 3 only)
 Arm 3 loads [data/context_cards.json](data/context_cards.json) at startup. Arms 1 and 2 never see it, which keeps
 them clean baselines. The real file is generated in the dbt repo from `manifest.json` and synced here (see
-[data/README.md](data/README.md)); the checked-in file is a sample. Point Sparky at another file with
+[data/README.md](data/README.md)); the checked-in file is a sample. Point AL at another file with
 `SPARKY_CONTEXT_PACK`. Regenerate and re-sync whenever `metrics.yml` changes, or it goes stale.
 
 ## Warming up before a demo
 Cold connections are the usual cause of dead air. Starting a chat means launching the Claude CLI and a
-`dbt-mcp` process, and a first-time dbt OAuth login. Sparky hides most of that with a **warm session pool**
+`dbt-mcp` process, and a first-time dbt OAuth login. AL hides most of that with a **warm session pool**
 (one ready session per mode, refilled after each new chat) and a warm-up script that proves every arm works.
 
 ### How warming works
@@ -218,7 +219,7 @@ nobody mistakes it for a live answer.
   model calls are made.
 - **Force it per page:** add `?mock=1`, for example `http://localhost:8000/?mode=arm3&mock=1`.
 - **Automatic fallback:** if a live call returns an error before any answer content appears, or sends nothing
-  within `SPARKY_LIVE_TIMEOUT` seconds (default 30), and a transcript exists for that arm and question, Sparky
+  within `SPARKY_LIVE_TIMEOUT` seconds (default 30), and a transcript exists for that arm and question, AL
   replays the transcript instead. The timeout applies to the **first event only**. A call that is working but
   slow (Arm 1 often is) will not fall back; use `?mock=1` if you need to avoid waiting on it.
 
@@ -258,8 +259,8 @@ Set these in `.env` (see [.env.example](.env.example)).
 
 ## Auth
 ### Anthropic
-Sparky drives the bundled Claude Code CLI, so it uses whatever login Claude Code has.
-- **OAuth (default when `ANTHROPIC_API_KEY` is empty):** run `claude` once and `/login`, then start Sparky
+AL drives the bundled Claude Code CLI, so it uses whatever login Claude Code has.
+- **OAuth (default when `ANTHROPIC_API_KEY` is empty):** run `claude` once and `/login`, then start AL
   from a shell with the same `CLAUDE_CONFIG_DIR` (if you use one) so it finds the credentials.
 - **API key:** set `ANTHROPIC_API_KEY` in `.env`. A set key takes precedence over the login.
 

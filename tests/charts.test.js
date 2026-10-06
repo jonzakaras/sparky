@@ -125,6 +125,27 @@ assert.deepStrictEqual(cfg('bar', sh(['term_sess_snp_rel_wk_nbr', 'n'], ['n'],
   [{ term_sess_snp_rel_wk_nbr: -2, n: 1 }, { term_sess_snp_rel_wk_nbr: -1, n: 2 }])).data.labels, ['-2', '-1']);
 assert.deepStrictEqual(cfg('bar', nodim).data.labels, ['1', '2']);
 
+// a rate queried with its inputs charts alone; the shape (and so the table) keeps every metric
+const melt = C.shapeOf({ ...ev(['program', 'asuo_census_melt_pct', 'first_day', 'census'], ['asuo_census_melt_pct', 'first_day', 'census'], [
+  { program: 'Q', asuo_census_melt_pct: 0.05, first_day: 100, census: 95 }, { program: 'S', asuo_census_melt_pct: 0.1, first_day: 50, census: 45 }]),
+labels: { asuo_census_melt_pct: 'Melt Rate (First Day to Census)', first_day: 'First Day Enrollment', census: 'Census Enrollment' } });
+assert.deepStrictEqual(melt.metrics, ['asuo_census_melt_pct', 'first_day', 'census']);
+assert.deepStrictEqual(C.chartMetrics(melt), ['asuo_census_melt_pct']);
+assert.deepStrictEqual(cfg('bar', melt).data.datasets.map((d) => d.label), ['Melt Rate (First Day to Census)']);
+assert.deepStrictEqual(cfg('bar', melt).data.labels, ['S', 'Q']);
+assert.ok(!C.kinds(melt).includes('scatter'));
+// a rate found by its label, and results that are all rates or all counts chart every metric
+assert.deepStrictEqual(C.chartMetrics({ ...mm, labels: { b: 'Yield rate' } }), ['b']);
+assert.deepStrictEqual(C.chartMetrics(mm), ['a', 'b']);
+
+// term labels as series ('Fall 2024', 'Spring 2025') run by year, then season, as they do on x
+const termSeries = sh(['program', 'term_descr', 'n'], ['n'], [
+  { program: 'Q', term_descr: 'Fall 2025', n: 1 }, { program: 'Q', term_descr: 'Spring 2025', n: 2 }, { program: 'Q', term_descr: 'Fall 2024', n: 3 }]);
+assert.deepStrictEqual(C.prepare(termSeries).datasets.map((d) => d.label), ['Fall 2024', 'Spring 2025', 'Fall 2025']);
+const termYoy = C.shapeOf(ev(['term_descr', 'rel_wk_nbr', 'n'], ['n'], [
+  { term_descr: 'Fall 2025', rel_wk_nbr: 1, n: 1 }, { term_descr: 'Spring 2025', rel_wk_nbr: 1, n: 2 }]), 'yoy');
+assert.deepStrictEqual(C.prepare(termYoy).datasets.map((d) => d.label), ['Spring 2025', 'Fall 2025']);
+
 // friendly metric names: the semantic-layer label when given, else a humanized metric name
 const lab = C.shapeOf({ ...ev(['season', 'enrl_students_budget'], ['enrl_students_budget'],
   [{ season: 'Fall', enrl_students_budget: 5 }, { season: 'Summer', enrl_students_budget: 3 }]),
