@@ -3,15 +3,20 @@
 #   make start                 start the server in the background (no --reload), wait until healthy
 #   make preflight             warm every arm, then run the warm-up script (do this before presenting)
 #   make open-arm3             open the Arm 3 page in the browser
+#   make docker-up             build and run the MCP server in Docker (http://localhost:8080/mcp)
+#   make mcp-config            print the Claude Desktop config for the Docker image
 #
 # Variables (override on the command line, e.g. `make run PORT=8001 MODE=arm2`):
 #   PORT=8000   MODE=arm3   ARMS=arm1,arm2,arm3   QUESTION="..."   MOCK=1
+#   MCP_PORT=8080   IMAGE=al-mcp:dev     (MCP server; see the docker-* and mcp-* targets)
 
 PORT     ?= 8000
 MODE     ?= arm3
 ARMS     ?= arm1,arm2,arm3
 QUESTION ?=
 MOCK     ?=
+MCP_PORT ?= 8080
+IMAGE    ?= al-mcp:dev
 
 VENV    := .venv/bin
 URL     := http://localhost:$(PORT)
@@ -27,7 +32,8 @@ SERVE = $(VENV)/uvicorn sparky.server:app --port $(PORT)
 
 .DEFAULT_GOAL := help
 .PHONY: help install run dev run-mock start stop restart status logs warm warmup preflight \
-        open-arm1 open-arm2 open-arm3 test bench bench-cold clean
+        open-arm1 open-arm2 open-arm3 test bench bench-cold clean \
+        mcp-run mcp-http mcp-inspect mcp-config docker-build docker-up docker-down docker-logs docker-status
 
 help: ## Show this list
 	@grep -E '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[1m%-12s\033[0m %s\n", $$1, $$2}'
@@ -97,6 +103,40 @@ open-arm3: ## Open the Arm 3 (context-aware) page
 .PHONY: _open
 _open:
 	@u="$(URL)/?mode=$(ARM)$(if $(MOCK),&mock=1)"; echo "$$u"; (open "$$u" 2>/dev/null || xdg-open "$$u" 2>/dev/null || true)
+
+# --- MCP server (Claude Desktop) -----------------------------------------------------------
+mcp-run: ## Run the MCP server natively over stdio (what Claude Desktop launches). Ctrl+D to stop
+	@$(ENV) $(VENV)/sparky-mcp
+
+mcp-http: ## Run the MCP server natively over HTTP at http://localhost:MCP_PORT/mcp
+	@$(ENV) SPARKY_TRANSPORT=http SPARKY_PORT=$(MCP_PORT) $(VENV)/sparky-mcp
+
+mcp-inspect: ## Open the MCP Inspector against the stdio server (needs Node)
+	@$(ENV) npx @modelcontextprotocol/inspector $(VENV)/sparky-mcp
+
+docker-build: ## Build the MCP server image (IMAGE=al-mcp:dev)
+	docker build -t $(IMAGE) .
+
+docker-up: ## Build and start the MCP server in Docker (needs DBT_TOKEN in .env), wait until healthy
+	@[ -f .env ] || { echo "No .env: run 'make install' first."; exit 1; }
+	MCP_PORT=$(MCP_PORT) docker compose up -d --build
+	@printf "Waiting for http://localhost:$(MCP_PORT)/health..."; \
+	for i in $$(seq 1 40); do \
+	  if curl -sf http://localhost:$(MCP_PORT)/health >/dev/null; then echo " healthy. MCP endpoint: http://localhost:$(MCP_PORT)/mcp"; exit 0; fi; sleep 2; \
+	done; echo " FAILED. Last log lines:"; docker compose logs --tail 10; exit 1
+
+docker-down: ## Stop and remove the MCP container
+	docker compose down
+
+docker-logs: ## Follow the MCP container's log (tool name and outcome only, no query data)
+	docker compose logs -f
+
+docker-status: ## Show whether the MCP container is healthy
+	@curl -sf http://localhost:$(MCP_PORT)/health >/dev/null && echo "Up at http://localhost:$(MCP_PORT)/mcp" \
+	  || { echo "Not reachable at http://localhost:$(MCP_PORT)"; exit 1; }
+
+mcp-config: ## Print the claude_desktop_config.json snippet that runs the Docker image over stdio
+	@printf '{\n  "mcpServers": {\n    "al": {\n      "command": "docker",\n      "args": ["run", "-i", "--rm", "--env-file", "$(CURDIR)/.env",\n               "-e", "SPARKY_TRANSPORT=stdio", "$(IMAGE)"]\n    }\n  }\n}\n'
 
 # --- Development ---------------------------------------------------------------------------
 test: ## Run the unit tests (no network or credentials needed)

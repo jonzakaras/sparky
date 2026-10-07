@@ -5,10 +5,14 @@ that uses the dbt MCP server and Socratic rules to sharpen vague questions into 
 semantic-layer queries. It can also run the same question in three configurations ("arms") to show
 what a governed metric and typed business context add over raw Text2SQL.
 
+AL also runs as an [MCP server](#mcp-server-claude-desktop) (`sparky-mcp`, Docker-ready), so Claude
+Desktop can use the same governed Semantic Layer tools, PII guard and Socratic rules with no web app.
+
 ## Contents
 - [Setup](#setup)
 - [Start the server](#start-the-server)
 - [Make targets](#make-targets)
+- [MCP server (Claude Desktop)](#mcp-server-claude-desktop)
 - [The three modes](#the-three-modes)
 - [Warming up before a demo](#warming-up-before-a-demo)
 - [Mock mode and fallback](#mock-mode-and-fallback)
@@ -61,6 +65,12 @@ A [Makefile](Makefile) wraps the commands in this README. It loads `.env` for yo
 | `make warmup` | Run each arm's demo question once through `scripts/warmup.py` |
 | `make preflight` | `warm` then `warmup`: the pre-demo check |
 | `make open-arm1` / `open-arm2` / `open-arm3` | Open that arm's page in the browser |
+| `make docker-up` | Build and start the MCP server in Docker, wait until healthy (`http://localhost:8080/mcp`) |
+| `make docker-down` / `docker-logs` / `docker-status` | Stop the container / follow its log / check it is healthy |
+| `make docker-build` | Build the image only (`IMAGE=al-mcp:dev`) |
+| `make mcp-config` | Print the `claude_desktop_config.json` snippet for the Docker image over stdio |
+| `make mcp-run` / `make mcp-http` | Run the MCP server natively over stdio / HTTP, without Docker |
+| `make mcp-inspect` | Open the MCP Inspector against the stdio server (needs Node) |
 | `make test` / `make bench` / `make bench-cold` | Unit tests / live benchmark / benchmark without the warm pool |
 | `make clean` | Remove caches, logs and benchmark output (keeps `.venv` and `.env`) |
 
@@ -73,6 +83,7 @@ make start PORT=8001                      # another port; pid and log files are 
 make warm ARMS=arm2,arm3                  # only some arms
 make warmup ARMS=arm3 QUESTION="How many students are enrolled by term season?"
 make open-arm3 MOCK=1                     # opens ?mode=arm3&mock=1
+make docker-up MCP_PORT=9090              # MCP server on another host port
 ```
 
 Typical demo day:
@@ -174,10 +185,13 @@ Every call goes through the aggregate-only PII guard, and every result is scrubb
 
 ```bash
 # .env: DBT_HOST, DBT_TOKEN, DBT_PROD_ENV_ID (and MULTICELL_ACCOUNT_PREFIX if multi-cell)
-docker compose up --build        # streamable HTTP on http://127.0.0.1:8080/mcp, health at /health
+make docker-up        # builds, starts and waits for health: http://localhost:8080/mcp
+make docker-logs      # follow the log;  make docker-down to stop
 ```
 
-**Connect Claude Desktop over stdio** (local pilot). Add to `claude_desktop_config.json` and restart:
+**Connect Claude Desktop over stdio** (local pilot). Build the image with `make docker-build`, run
+`make mcp-config`, paste the printed JSON into `claude_desktop_config.json` (Settings > Developer >
+Edit Config) and restart Claude Desktop:
 
 ```json
 {
@@ -191,8 +205,8 @@ docker compose up --build        # streamable HTTP on http://127.0.0.1:8080/mcp,
 }
 ```
 
-Build the image first with `docker build -t al-mcp:dev .`. Without Docker, `uv run sparky-mcp` also
-works (stdio by default; `SPARKY_TRANSPORT=http` for HTTP, `SPARKY_HOST`/`SPARKY_PORT` to bind).
+**Without Docker.** `make mcp-run` (stdio) and `make mcp-http` (HTTP) run `sparky-mcp` from `.venv`,
+and `make mcp-inspect` opens the MCP Inspector to try the tools by hand.
 
 **Hosting for a team.** The HTTP endpoint has no authentication of its own, and all queries share
 one dbt identity, so put SSO in front of it (an auth proxy or OAuth gateway restricted to the group)
@@ -292,6 +306,10 @@ Set these in `.env` (see [.env.example](.env.example)).
 | `SPARKY_LIVE_TIMEOUT` | `30` | Seconds to wait for a first live event before falling back to a transcript |
 | `SPARKY_CONTEXT_PACK` | `data/context_cards.json` | Context pack loaded by Arm 3 |
 | `SPARKY_MODEL` | SDK default | Override the model |
+| `SPARKY_TRANSPORT` | `stdio` (`http` in the Docker image) | MCP server transport: `stdio` or `http` |
+| `SPARKY_HOST`, `SPARKY_PORT` | `127.0.0.1`, `8080` | MCP server bind address for `http` (the image binds `0.0.0.0`) |
+| `SPARKY_LOG_LEVEL` | `INFO` | MCP server log level |
+| `MCP_PORT` | `8080` | Make/compose only: host port for `make docker-up` and `docker-status` |
 
 ## Auth
 ### Anthropic
@@ -329,4 +347,7 @@ AL drives the bundled Claude Code CLI, so it uses whatever login Claude Code has
 Customize behavior:
 - [src/sparky/modes.py](src/sparky/modes.py): the three arms (tools, prompts, which arms get context and citations)
 - [src/sparky/rules/](src/sparky/rules/): `socratic.md` and `system.md` (Arm 3), `arm1.md`, `arm2.md`
+- [src/sparky/mcp_server.py](src/sparky/mcp_server.py): the MCP server; [src/sparky/guards.py](src/sparky/guards.py) holds the PII checks shared with the web agent; [src/sparky/rules/mcp.md](src/sparky/rules/mcp.md) adapts the rules for Claude Desktop
 - [src/sparky/config.py](src/sparky/config.py): settings and the always-blocked tool list (read-only by default)
+
+CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the tests and a Docker build on every push and pull request.
