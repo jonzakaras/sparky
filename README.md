@@ -163,6 +163,42 @@ them clean baselines. The real file is generated in the dbt repo from `manifest.
 [data/README.md](data/README.md)); the checked-in file is a sample. Point AL at another file with
 `SPARKY_CONTEXT_PACK`. Regenerate and re-sync whenever `metrics.yml` changes, or it goes stale.
 
+## MCP server (Claude Desktop)
+
+`sparky-mcp` serves arm 3 to Claude Desktop as an MCP server, so Claude Desktop is the LLM and no
+agent runs here. It exposes the six dbt Semantic Layer tools (no raw SQL, no job triggers) plus
+`get_context`, an `al` prompt and server instructions holding the Socratic rules and context cards.
+Every call goes through the aggregate-only PII guard, and every result is scrubbed (`guards.py`).
+
+**Run it in Docker.** It needs a dbt service token: browser OAuth cannot work in a container.
+
+```bash
+# .env: DBT_HOST, DBT_TOKEN, DBT_PROD_ENV_ID (and MULTICELL_ACCOUNT_PREFIX if multi-cell)
+docker compose up --build        # streamable HTTP on http://127.0.0.1:8080/mcp, health at /health
+```
+
+**Connect Claude Desktop over stdio** (local pilot). Add to `claude_desktop_config.json` and restart:
+
+```json
+{
+  "mcpServers": {
+    "al": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "--env-file", "/absolute/path/to/.env",
+               "-e", "SPARKY_TRANSPORT=stdio", "al-mcp:dev"]
+    }
+  }
+}
+```
+
+Build the image first with `docker build -t al-mcp:dev .`. Without Docker, `uv run sparky-mcp` also
+works (stdio by default; `SPARKY_TRANSPORT=http` for HTTP, `SPARKY_HOST`/`SPARKY_PORT` to bind).
+
+**Hosting for a team.** The HTTP endpoint has no authentication of its own, and all queries share
+one dbt identity, so put SSO in front of it (an auth proxy or OAuth gateway restricted to the group)
+before exposing it beyond localhost. Logs record the tool name and outcome only, never arguments or
+results.
+
 ## Warming up before a demo
 Cold connections are the usual cause of dead air. Starting a chat means launching the Claude CLI and a
 `dbt-mcp` process, and a first-time dbt OAuth login. AL hides most of that with a **warm session pool**

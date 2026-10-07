@@ -9,7 +9,11 @@ dependencies = [
   "uvicorn",
   "sse-starlette",
   "pyyaml",
+  "mcp>=2.3,<3",
 ]
+
+[project.scripts]
+sparky-mcp = "sparky.mcp_server:main"
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-asyncio", "httpx"]

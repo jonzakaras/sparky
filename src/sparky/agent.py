@@ -15,7 +15,7 @@ from claude_agent_sdk import (
 )
 
 from .config import Settings
-from . import pii
+from . import guards, pii
 from .context import load_context_cards, render_for_prompt
 from .modes import Mode, get_mode
 from .tools.cite import make_cite_tool
@@ -82,14 +82,14 @@ async def _sql_guard(input_data, tool_use_id, context):
 
 async def _semantic_guard(input_data, tool_use_id, context):
     """No grouping by, filtering on or listing values of student identifiers (see pii.py)."""
-    reason = pii.check_semantic_args(input_data.get("tool_input") or {})
+    reason = guards.check_call("query_metrics", input_data.get("tool_input") or {})
     return _deny(reason) if reason else {}
 
 
 async def _result_scrubber(input_data, tool_use_id, context):
     """Drop identifier columns and redact PII values from dbt tool results before the model reads them."""
     response = input_data.get("tool_response")
-    clean = pii.scrub_payload(response)
+    clean = guards.scrub_result(response)
     if clean == response:
         return {}
     return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "updatedMCPToolOutput": clean}}

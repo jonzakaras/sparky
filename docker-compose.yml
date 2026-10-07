@@ -1,0 +1,7 @@
+services:
+  al-mcp:
+    build: .
+    env_file: .env          # DBT_HOST, DBT_TOKEN, DBT_PROD_ENV_ID, MULTICELL_ACCOUNT_PREFIX
+    ports:
+      - "127.0.0.1:8080:8080"   # localhost only. Hosting for the team needs SSO in front (see README).
+    restart: unless-stopped

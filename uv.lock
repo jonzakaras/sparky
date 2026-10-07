@@ -1095,6 +1095,7 @@ source = { editable = "." }
 dependencies = [
     { name = "claude-agent-sdk" },
     { name = "fastapi" },
+    { name = "mcp" },
     { name = "pyyaml" },
     { name = "sse-starlette" },
     { name = "uvicorn" },
@@ -1112,6 +1113,7 @@ requires-dist = [
     { name = "claude-agent-sdk" },
     { name = "fastapi" },
     { name = "httpx", marker = "extra == 'dev'" },
+    { name = "mcp", specifier = ">=2.3,<3" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "pytest-asyncio", marker = "extra == 'dev'" },
     { name = "pyyaml" },
