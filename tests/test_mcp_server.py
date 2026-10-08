@@ -94,3 +94,11 @@ async def test_prompt_and_instructions_carry_rules_and_cards(settings):
 
 def test_instructions_work_without_context_cards():
     assert "Socratic" in build_instructions({"metrics": {}})
+
+
+async def test_upstream_error_result_is_logged_as_error(settings, caplog):
+    caplog.set_level("INFO", logger="sparky.mcp")
+    async with await connect(FakeUpstream("User is not authorized", is_error=True), settings) as c:
+        res = await c.call_tool("list_metrics", {})
+    assert res.is_error
+    assert "tool=list_metrics outcome=error" in caplog.text

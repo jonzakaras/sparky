@@ -135,7 +135,10 @@ def build_server(upstream: Upstream, settings: Settings | None = None) -> Server
             if reason:
                 outcome = "denied"
                 return _text_result(DENIED.format(reason), is_error=True)
-            return scrub_tool_result(await upstream.call_tool(name, args))
+            result = await upstream.call_tool(name, args)
+            if result.is_error:
+                outcome = "error"
+            return scrub_tool_result(result)
         except Exception:
             outcome = "error"
             # The exception text can quote warehouse data, so only the server log gets it.
